@@ -1,19 +1,21 @@
-name: Build VisionClaw IPA (Python Patch)
+name: Build VisionClaw IPA (Final Fix)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 15.4
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      - name: Select Xcode 16.4
+        # We are back on Xcode 16 so it can read the modern .xcodeproj file
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Force Patch AudioManager via Python
+        # This will forcefully fix the Bluetooth bug that Xcode 16 hates
         run: |
           python3 -c "
           import os
@@ -22,7 +24,6 @@ jobs:
               with open(filepath, 'r') as file:
                   data = file.read()
               
-              # Force replace the broken Bluetooth constant
               data = data.replace('.allowBluetoothHFP', '.allowBluetooth')
               
               with open(filepath, 'w') as file:
