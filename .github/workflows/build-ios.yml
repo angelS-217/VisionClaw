@@ -1,26 +1,33 @@
 name: Build VisionClaw IPA
 
 on:
-  workflow_dispatch: # Allows you to manually trigger the build
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14 # Uses a stable Mac environment
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create Secrets.swift (Dummy config)
+      - name: Select Xcode Version
+        # We use Xcode 15.4 to avoid strict Swift 6 errors
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Auto-Fix Audio Code Error
+        # This command finds the broken Bluetooth line and fixes it automatically
         run: |
-          # Creates the secrets file so the build doesn't fail.
-          # You can enter your actual Gemini API key inside the app's settings later!
+          sed -i '' 's/\.allowBluetoothHFP/\.allowBluetooth/g' samples/CameraAccess/CameraAccess/Gemini/AudioManager.swift
+
+      - name: Create Secrets.swift
+        run: |
           cd samples/CameraAccess/CameraAccess
           cp Secrets.swift.example Secrets.swift
 
       - name: Build Unsigned iOS App
         run: |
           cd samples/CameraAccess
-          # Compiles the app for iPhone while bypassing Apple's strict code-signing
+          # We add STRICT_CONCURRENCY=minimal to ignore those new Swift warnings
           xcodebuild clean build \
             -project CameraAccess.xcodeproj \
             -scheme CameraAccess \
@@ -29,18 +36,17 @@ jobs:
             CODE_SIGNING_ALLOWED="NO" \
             CODE_SIGNING_REQUIRED="NO" \
             CODE_SIGN_IDENTITY="" \
+            SWIFT_STRICT_CONCURRENCY=minimal \
             CONFIGURATION_BUILD_DIR="${PWD}/build"
 
       - name: Package into .IPA
         run: |
           cd samples/CameraAccess
           mkdir Payload
-          # Move the compiled app into the Payload folder
-          mv build/CameraAccess.app Payload/
-          # Compress it into the standard iOS app format (.ipa)
+          cp -r build/CameraAccess.app Payload/
           zip -r VisionClaw.ipa Payload
 
-      - name: Upload IPA for Download
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: VisionClaw-iOS-App
