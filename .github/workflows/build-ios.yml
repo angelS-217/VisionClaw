@@ -1,4 +1,4 @@
-name: Build VisionClaw IPA
+name: Build VisionClaw IPA (Python Patch)
 
 on:
   workflow_dispatch:
@@ -13,14 +13,25 @@ jobs:
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      - name: Force Rewrite AudioManager
-        # This absolutely forces the file to contain the correct code, ignoring whatever GitHub downloaded
+      - name: Force Patch AudioManager via Python
         run: |
-          cd samples/CameraAccess/CameraAccess/Gemini
-          # We use sed to replace the broken line. If it fails, it prints why.
-          sed -i '' 's/\.allowBluetoothHFP/\.allowBluetooth/g' AudioManager.swift
-          echo "Verification: Here is line 53 of the rewritten file:"
-          sed -n '53p' AudioManager.swift
+          python3 -c "
+          import os
+          filepath = 'samples/CameraAccess/CameraAccess/Gemini/AudioManager.swift'
+          if os.path.exists(filepath):
+              with open(filepath, 'r') as file:
+                  data = file.read()
+              
+              # Force replace the broken Bluetooth constant
+              data = data.replace('.allowBluetoothHFP', '.allowBluetooth')
+              
+              with open(filepath, 'w') as file:
+                  file.write(data)
+              print('✅ Successfully patched AudioManager.swift!')
+          else:
+              print('❌ Error: Could not find AudioManager.swift')
+              exit(1)
+          "
 
       - name: Create Secrets.swift
         run: |
@@ -30,6 +41,7 @@ jobs:
       - name: Build App
         run: |
           cd samples/CameraAccess
+          set -o pipefail
           xcodebuild clean build \
             -project CameraAccess.xcodeproj \
             -scheme CameraAccess \
