@@ -13,25 +13,21 @@ jobs:
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      - name: Fix Code Errors & Setup Secrets
+      - name: Fix Bluetooth & Concurrency Errors
+        # This scans all Swift files and fixes the HFP constant and a common actor warning
         run: |
-          echo "Finding and fixing Bluetooth error..."
-          # This finds the file regardless of depth and replaces the broken constant
-          find . -name "AudioManager.swift" -exec sed -i '' 's/\.allowBluetoothHFP/\.allowBluetooth/g' {} +
-          
-          echo "Setting up Secrets.swift..."
-          # Find the example file and copy it to the correct location
-          EXAMPLE_FILE=$(find . -name "Secrets.swift.example" | head -n 1)
-          TARGET_DIR=$(dirname "$EXAMPLE_FILE")
-          cp "$EXAMPLE_FILE" "$TARGET_DIR/Secrets.swift"
-          
-          echo "Verified files in target directory:"
-          ls "$TARGET_DIR"
+          find . -name "*.swift" -exec sed -i '' 's/\.allowBluetoothHFP/\.allowBluetooth/g' {} +
+          find . -name "*.swift" -exec sed -i '' 's/self?\.sendJSON(json)/await self?\.sendJSON(json)/g' {} +
 
-      - name: Build App
+      - name: Setup Secrets
+        run: |
+          find . -name "Secrets.swift.example" -exec cp {} samples/CameraAccess/CameraAccess/Secrets.swift \;
+
+      - name: Build and Capture Errors
+        id: build_step
         run: |
           cd samples/CameraAccess
-          # We use -quiet to hide the file list and -resultBundlePath to capture errors
+          # We use a log file to capture the output so we can find the real error if it fails
           xcodebuild clean build \
             -project CameraAccess.xcodeproj \
             -scheme CameraAccess \
@@ -41,25 +37,19 @@ jobs:
             CODE_SIGNING_ALLOWED="NO" \
             CODE_SIGNING_REQUIRED="NO" \
             CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED="YES" \
             SWIFT_STRICT_CONCURRENCY=minimal \
-            CONFIGURATION_BUILD_DIR="${PWD}/build" \
-            | grep -A 5 "error:" || true 
-            # The line above forces the terminal to show only the errors if it fails
+            CONFIGURATION_BUILD_DIR="${PWD}/build" > build_log.txt 2>&1 || (grep -A 3 "error:" build_log.txt && exit 1)
 
       - name: Package into .IPA
+        if: success()
         run: |
           cd samples/CameraAccess
-          if [ -d "build/CameraAccess.app" ]; then
-            mkdir -p Payload
-            cp -r build/CameraAccess.app Payload/
-            zip -r VisionClaw.ipa Payload
-          else
-            echo "Build failed - .app folder not found"
-            exit 1
-          fi
+          mkdir -p Payload
+          cp -r build/CameraAccess.app Payload/
+          zip -r VisionClaw.ipa Payload
 
       - name: Upload IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: VisionClaw-iOS-App
