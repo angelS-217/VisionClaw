@@ -1,4 +1,4 @@
-name: Build VisionClaw IPA
+name: Build VisionClaw IPA (Diagnostic)
 
 on:
   workflow_dispatch:
@@ -13,21 +13,22 @@ jobs:
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      - name: Fix Bluetooth & Concurrency Errors
-        # This scans all Swift files and fixes the HFP constant and a common actor warning
+      - name: Sanity Check - Verify Code Fix
+        # This forces the log to show us exactly what is written on lines 52-54
         run: |
-          find . -name "*.swift" -exec sed -i '' 's/\.allowBluetoothHFP/\.allowBluetooth/g' {} +
-          find . -name "*.swift" -exec sed -i '' 's/self?\.sendJSON(json)/await self?\.sendJSON(json)/g' {} +
+          echo "Checking what the server sees in AudioManager.swift:"
+          sed -n '52,54p' samples/CameraAccess/CameraAccess/Gemini/AudioManager.swift
 
-      - name: Setup Secrets
+      - name: Create Secrets.swift
         run: |
-          find . -name "Secrets.swift.example" -exec cp {} samples/CameraAccess/CameraAccess/Secrets.swift \;
+          cd samples/CameraAccess/CameraAccess
+          cp Secrets.swift.example Secrets.swift
 
-      - name: Build and Capture Errors
-        id: build_step
+      - name: Build App with xcpretty Filter
         run: |
           cd samples/CameraAccess
-          # We use a log file to capture the output so we can find the real error if it fails
+          set -o pipefail
+          # xcpretty acts as a filter to hide the noise and only show real errors
           xcodebuild clean build \
             -project CameraAccess.xcodeproj \
             -scheme CameraAccess \
@@ -38,19 +39,4 @@ jobs:
             CODE_SIGNING_REQUIRED="NO" \
             CODE_SIGN_IDENTITY="" \
             SWIFT_STRICT_CONCURRENCY=minimal \
-            CONFIGURATION_BUILD_DIR="${PWD}/build" > build_log.txt 2>&1 || (grep -A 3 "error:" build_log.txt && exit 1)
-
-      - name: Package into .IPA
-        if: success()
-        run: |
-          cd samples/CameraAccess
-          mkdir -p Payload
-          cp -r build/CameraAccess.app Payload/
-          zip -r VisionClaw.ipa Payload
-
-      - name: Upload IPA
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VisionClaw-iOS-App
-          path: samples/CameraAccess/VisionClaw.ipa
+            CONFIGURATION_BUILD_DIR="${PWD}/build" | xcpretty
